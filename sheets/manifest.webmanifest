@@ -1,0 +1,21 @@
+{
+    "display":  "standalone",
+    "icons":  [
+                  {
+                      "type":  "image/png",
+                      "sizes":  "192x192",
+                      "src":  "icon-192.png"
+                  },
+                  {
+                      "type":  "image/png",
+                      "sizes":  "512x512",
+                      "src":  "icon-512.png"
+                  }
+              ],
+    "background_color":  "#16181d",
+    "theme_color":  "#1f3b63",
+    "name":  "지킴이 악보 보기",
+    "start_url":  "./",
+    "scope":  "./",
+    "short_name":  "악보 보기"
+}

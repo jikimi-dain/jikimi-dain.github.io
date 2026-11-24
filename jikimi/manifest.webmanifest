@@ -1,0 +1,21 @@
+{
+    "display":  "standalone",
+    "icons":  [
+                  {
+                      "type":  "image/png",
+                      "sizes":  "192x192",
+                      "src":  "icon-192.png"
+                  },
+                  {
+                      "type":  "image/png",
+                      "sizes":  "512x512",
+                      "src":  "icon-512.png"
+                  }
+              ],
+    "background_color":  "#16181d",
+    "theme_color":  "#3a2a6b",
+    "name":  "방하착 지킴이",
+    "start_url":  "./",
+    "scope":  "./",
+    "short_name":  "지킴이"
+}
