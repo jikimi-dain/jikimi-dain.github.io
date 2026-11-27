@@ -179,7 +179,19 @@ function 권한_허락하기() { Logger.log('연결된 캘린더: ' + cal_().get
  * 안전: 휴대폰에서 지운 일정 때문에 지킴이 기록을 지우지 않음 · 한 번에 5개 넘게 지워야 하면 지우지 않고 기다림
  * 짝 정보는 드라이브 gcs-map.json. 켜져 있으면 노트북 지킴이는 캘린더 일을 쉼(dinfo의 gcs).
  * 처음 한 번: 자동맞춤_켜기 ▶실행 → 권한 허락.  끄기: 자동맞춤_끄기 */
-const GCS = { back: 60, ahead: 400, skip: { gift: 1, stock: 1 }, tail: '(放下着 JIKIMi)', maxDel: 5, budget: 270000 };
+/* 📅 2026-11-27 지킴이님(“공부·배움·명언 같은 분류는 그 분류에만 — 캘린더에 들어가면 안 돼. 오늘의 일정 분류로 넣거나 일정 쓰기로 기록한 것만 캘린더로”):
+   캘린더로 보내는 것 = 일정 분류(할 일·일정·행사·약속·알람·반복·기념일·병원·납부·공모주, 내가 만든 ‘여행·약속·모임’ 같은 분류) + 분류 없이 할 일·시간을 정한 일정 + 휴대폰에서 온 일정.
+   공부·일기·명언(좋은 말)·주식 글·수입지출·기록 같은 글은 안 보냄 → 이미 들어간 것은 캘린더에서만 지움(지킴이 기록은 그대로) */
+const GCS = { back: 60, ahead: 400, skip: { gift: 1, stock: 1 }, cal: { todo: 1, event: 1, meet: 1, alarm: 1, repeat: 1, anniv: 1, health: 1, bill: 1, ipo: 1 }, calName: /여행|약속|일정|모임|행사|병원|예약/, calGrp: /^(할 일|휴대폰 일정|휴대폰 되풀이 일정|일정·행사|약속|알람)$/, tail: '(放下着 JIKIMi)', maxDel: 5, catDel: 25, budget: 270000 };
+function gcsCalOk_(e, cats) { if (!e) return false; const cq = e.cq || '';
+  if (GCS.cal[cq]) return true;
+  const c = cq && cq !== 'etc' ? (cats || []).filter(x => x && x.k === cq)[0] : null;
+  if (c && GCS.calName.test(String(c.name || ''))) return true;
+  const writing = { study: 1, diary: 1, stock: 1, money: 1, gift: 1 }[cq] || (c && /말|명언|글|이체|수익|내역|변동|공부|배움|일기/.test(String(c.name || '')));
+  if (!writing && String(e.date || '') >= ymd_(new Date())) return true; // 앞으로 있을 일(예: ‘한 일’로 적은 병원 검사)은 남김
+  if (c) return false;
+  return GCS.calGrp.test(String(e.grp || '')) || (!cq && /^\d{1,2}:\d{2}$/.test(e.time || '')); }
+function gcsSkipCq_(e, cats) { return !gcsCalOk_(e, cats); }
 function 자동맞춤_켜기() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'gcsRun').forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('gcsRun').timeBased().everyMinutes(5).create();
@@ -213,7 +225,7 @@ function gcsPlan_(ctx) {
   const out = { recAdds: [], recUpd: [], evCreate: [], evUpdate: [], evDelete: [], evTag: [], log: [] };
   const GONE = {}; (ctx.gone || []).forEach(x => { if (x && x.id != null) GONE[String(x.id)] = 1; }); // 지킴이에서 지운 기록 (설정 gone, 기기끼리 맞춤)
   const isIpo = id => String(id || '').indexOf('ipo:') === 0;
-  const want = e => !!(e && e.kind === 'plan' && e.date && !GCS.skip[e.cq] && !e.grec);
+  const want = e => !!(e && e.kind === 'plan' && e.date && !GCS.skip[e.cq] && gcsCalOk_(e, ctx.cats) && !e.grec);
   const pay = e => Object.assign({ title: String(e.label || e.memo || '일정').slice(0, 300), date: e.date, time: /^\d{1,2}:\d{2}$/.test(e.time || '') ? e.time : '', desc: (isIpo(e.id) && e.memo ? '📈 ' + e.memo + '\n' : '') + (e.more ? e.more + '\n' : '') + (e.note ? e.note + '\n' : '') + GCS.tail }, isIpo(e.id) ? { rem: e.cancel ? 'none' : 0 } : {}); // 철회된 공모주는 알림 없음
   const payH = e => gcsH_(JSON.stringify(pay(e)));
   const evEq = (v, p) => v.title === p.title && v.date === p.date && (v.allDay ? '' : (v.time || '')) === p.time && String(v.desc || '') === p.desc;
@@ -287,9 +299,10 @@ function gcsPlan_(ctx) {
   });
   // 지킴이에서 지운 일정 → 캘린더에서도 (한꺼번에 많으면 기다림)
   const dels = [];
+  Object.keys(M).forEach(id => { const x = M[id], e = all[id]; if (out.evDelete.length >= GCS.catDel) return; if (e && !isIpo(id) && x.g && !x.r && !x.ign && e.kind === 'plan' && !GCS.skip[e.cq] && gcsSkipCq_(e, ctx.cats)) out.evDelete.push({ gid: x.g, appId: id, cat: 1 }); }); // 한 번에 25개씩(구글 속도 제한) // 캘린더에 안 보내는 분류가 된 기록 → 캘린더에서만 지움 (지킴이 기록은 그대로)
   Object.keys(M).forEach(id => { const x = M[id]; if (all[id]) return; if (isIpo(id) || x.r || !x.g || x.lost) { delete M[id]; return; } dels.push({ gid: x.g, appId: id }); });
   if (dels.length > GCS.maxDel) out.log.push('⚠ 지킴이에서 없어진 일정이 ' + dels.length + '개라 캘린더에서는 지우지 않고 기다려요');
-  else out.evDelete = dels;
+  else out.evDelete = out.evDelete.concat(dels);
   return out;
 }
 function gcsIpoItems_(list) { // 지킴이 앱 ipoItems와 같은 글자
@@ -321,12 +334,12 @@ function gcsSync_(opt) {
     const s = data['s'] || {}, ipo = (s.ipo && s.ipo.list) || [];
     const c = cal_(), evs = c.getEvents(parseDay_(from), parseDay_(gcsAddDays_(to, 1))).map(evJson_);
     const map = readJ_(d, 'gcs-map.json', { items: {}, ign: {} });
-    const plan = gcsPlan_({ now: Date.now(), from: from, to: to, recs: recs, ipo: ipo, gone: Array.isArray(s.gone) ? s.gone : [], grecOff: !!s.grecOff, events: evs, map: map });
+    const plan = gcsPlan_({ now: Date.now(), from: from, to: to, recs: recs, ipo: ipo, cats: Array.isArray(s.calCats) ? s.calCats : [], gone: Array.isArray(s.gone) ? s.gone : [], grecOff: !!s.grecOff, events: evs, map: map });
     // 캘린더 고치기 (시간이 모자라면 다음 차례에 이어서)
     let nC = 0, nU = 0, nD = 0, nT = 0;
     const tight = () => Date.now() - t0 > GCS.budget;
     plan.evCreate.concat(plan.evUpdate).forEach(op => { if (tight()) return; try { const r = upsert_(Object.assign({ appId: op.appId, gid: op.gid || '' }, op.pay)); map.items[op.appId] = { g: r.gid, u: r.updated, h: op.h }; if (op.gid) nU++; else nC++; } catch (e) { plan.log.push('보내기 실패 ' + op.appId + ': ' + e); } });
-    plan.evDelete.forEach(op => { if (tight()) return; const r = del_({ gid: op.gid }); delete map.items[op.appId]; if (r.ok) nD++; });
+    plan.evDelete.forEach(op => { if (tight()) return; const r = del_({ gid: op.gid }); if (r.ok || !op.cat || /not found|찾을 수 없|없습니다/i.test(String(r.error || ''))) delete map.items[op.appId]; if (r.ok) nD++; });
     // 지킴이 기록 쓰기 (다른 기기가 그 사이 보낸 것과 겹치지 않게, 잠그고 새로 읽어서 고친 것만)
     let nR = 0;
     if (plan.recAdds.length || plan.recUpd.length) {
